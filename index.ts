@@ -413,11 +413,17 @@ window.addEventListener("keyup", (ev) => {
       coordinateBuffer[coordinateBuffer.length - 1] =
         current.slice(0, -2) + "_";
     }
-  } else if (ev.code == "Escape") {
-    coordinateBuffer.length = 0;
-    coordinateBuffer.push("_");
   } else if (ev.code == "Delete") {
     if (coordinateBuffer[0] === "_") deleteSelectedBases();
+  } else if (ev.code == "Escape") {
+    if (coordinateBuffer[0] === "_") {
+      for (let i = 0; i < bases.length; i++) {
+        bases[i][3] = false;
+      }
+      return;
+    }
+    coordinateBuffer.length = 0;
+    coordinateBuffer.push("_");
   } else if (ev.code == "KeyA" && ev.ctrlKey) {
     for (let i = 0; i < bases.length; i++) {
       bases[i][3] = true;
@@ -429,13 +435,17 @@ window.addEventListener("keydown", (ev) => {
   let deltaX = 0;
   let deltaY = 0;
   if (ev.code === "ArrowUp") {
-    deltaY = -SQUARE_WIDTH;
+    if (bases.some((base) => base[3])) return updateBases(0, 1);
+    deltaY = scale * -SQUARE_WIDTH;
   } else if (ev.code === "ArrowDown") {
-    deltaY = SQUARE_WIDTH;
+    if (bases.some((base) => base[3])) return updateBases(0, -1);
+    deltaY = scale * SQUARE_WIDTH;
   } else if (ev.code === "ArrowRight") {
-    deltaX = SQUARE_WIDTH;
+    if (bases.some((base) => base[3])) return updateBases(1, 0);
+    deltaX = scale * SQUARE_WIDTH;
   } else if (ev.code === "ArrowLeft") {
-    deltaX = -SQUARE_WIDTH;
+    if (bases.some((base) => base[3])) return updateBases(-1, 0);
+    deltaX = scale * -SQUARE_WIDTH;
   } else if (ev.ctrlKey) {
     if (ev.code == "Equal" || ev.code == "NumpadAdd") {
       zoom(0.2);
@@ -461,6 +471,29 @@ window.addEventListener("keydown", (ev) => {
   translate(deltaX, deltaY);
 });
 
+function updateBases(deltaX: number, deltaY: number) {
+  const newBases: typeof bases = new Array(bases.length);
+  for (let i = 0; i < bases.length; i++) {
+    if (!bases[i][3]) {
+      newBases[i] = bases[i];
+      continue;
+    }
+    const distanceToCapitol = distance(
+      bases[i][0],
+      bases[i][1],
+      capitol[0],
+      capitol[1]
+    );
+    newBases[i] = [
+      bases[i][0] + deltaX,
+      bases[i][1] + deltaY,
+      distanceToCapitol.toFixed(1),
+      bases[i][3],
+    ];
+  }
+  bases.splice(0, bases.length, ...newBases);
+}
+
 let mouseX = 0;
 let mouseY = 0;
 canvas.addEventListener("mousemove", (ev) => {
@@ -484,11 +517,8 @@ canvas.addEventListener("mouseup", (ev) => {
   const [mouseUpX, mouseUpY] = getTranslatedPosition(ev.x, ev.y);
   const endX = X(mouseUpX);
   const endY = Y(mouseUpY);
-  if (startX !== endX || startY !== endY) {
-    finishSelection(startX, startY, endX, endY);
-    return;
-  }
-  addBase(endX, endY);
+  if (startX === endX && startY === endY && addBase(endX, endY)) return;
+  finishSelection(startX, startY, endX, endY);
 });
 
 function getBasesFromStorage() {
@@ -519,19 +549,21 @@ function finishSelection(x1: number, y1: number, x2: number, y2: number) {
   const maxY = Math.max(y1, y2);
   for (let i = 0; i < bases.length; i++) {
     const [x, y] = bases[i];
-    bases[i][3] = x >= minX && x <= maxX && y >= minY && y <= maxY;
+    bases[i][3] =
+      x + 1 >= minX && x - 1 <= maxX && y + 1 >= minY && y - 1 <= maxY;
   }
 }
 
 function addBase(x: number, y: number) {
-  if (x === 0 || x === 999 || y === 0 || y === 999) return;
+  if (x === 0 || x === 999 || y === 0 || y === 999) return false;
   for (let i = 0; i < bases.length; i++) {
     const [baseX, baseY] = bases[i];
-    if (Math.abs(x - baseX) < 3 && Math.abs(y - baseY) < 3) return;
+    if (Math.abs(x - baseX) < 3 && Math.abs(y - baseY) < 3) return false;
   }
   const distanceToCapitol = distance(x, y, capitol[0], capitol[1]);
   bases.push([x, y, distanceToCapitol.toFixed(1), false]);
   localStorage.setItem("v0.0.1.bases", JSON.stringify(bases));
+  return true;
 }
 
 function deleteSelectedBases() {
@@ -645,18 +677,15 @@ function renderBases() {
   context.save();
   for (let i = 0; i < bases.length; i++) {
     const [xPos, yPos, distance, selected] = bases[i];
-    context.beginPath();
-    context.ellipse(
-      x(xPos) + SQUARE_WIDTH / 2,
-      y(yPos) + SQUARE_WIDTH / 2,
-      SQUARE_WIDTH * 1.25,
-      SQUARE_WIDTH * 1.25,
-      0,
-      0,
-      360
-    );
-    context.closePath();
     context.fillStyle = "#000";
+    context.beginPath();
+    const originX = x(xPos) - SQUARE_WIDTH / 2 - SQUARE_WIDTH / 4;
+    const originY = y(yPos) - SQUARE_WIDTH / 2 - SQUARE_WIDTH / 4;
+    context.moveTo(originX, originY);
+    context.lineTo(originX + SQUARE_WIDTH * 2.5, originY);
+    context.lineTo(originX + SQUARE_WIDTH * 2.5, originY + SQUARE_WIDTH * 2.5);
+    context.lineTo(originX, originY + SQUARE_WIDTH * 2.5);
+    context.closePath();
     context.fill();
     context.lineWidth = 5;
     context.strokeStyle = "#2196f3";
